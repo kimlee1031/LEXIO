@@ -126,7 +126,7 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
           
           {/* 플레이어 목록 */}
           <div className="mb-6">
-            <p className="text-white/80 text-sm mb-2">플레이어 ({roomPlayers.length}/4):</p>
+            <p className="text-white/80 text-sm mb-2">플레이어 ({roomPlayers.length}/5):</p>
             <div className="space-y-2">
               {roomPlayers.map((player) => (
                 <div

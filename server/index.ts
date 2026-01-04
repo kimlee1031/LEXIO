@@ -34,7 +34,7 @@ io.on('connection', (socket) => {
       name,
       hostId: playerId,
       players: [player],
-      maxPlayers: 4,
+      maxPlayers: 5,
       gameState: null,
     };
 
@@ -342,9 +342,12 @@ function startGame(room: Room) {
     round: 1,
   };
 
-  // 각 플레이어에게 타일 분배 (13장씩)
+  // 플레이어 수에 따라 타일 분배
+  // 5명일 때: 12장씩, 4명 이하일 때: 13장씩
+  const tilesPerPlayer = gameState.players.length === 5 ? 12 : 13;
+  
   gameState.players.forEach(player => {
-    player.tiles = deck.splice(0, 13);
+    player.tiles = deck.splice(0, tilesPerPlayer);
   });
 
   gameState.deck = deck;
