@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "tsx index.ts",
+    "postinstall": "npm run build || echo 'Build skipped'"
   },
   "dependencies": {
     "socket.io": "^4.7.5"
