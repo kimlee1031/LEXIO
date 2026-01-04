@@ -379,7 +379,7 @@ function generatePlayerId(): string {
   return Math.random().toString(36).substring(2, 15);
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0'; // 모든 네트워크 인터페이스에서 수신 (0.0.0.0 = 모든 IP)
 httpServer.listen(PORT, HOST, () => {
   console.log(`Socket.io server running on ${HOST}:${PORT}`);
