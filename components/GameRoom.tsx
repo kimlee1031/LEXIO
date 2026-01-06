@@ -20,6 +20,7 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
   const [message, setMessage] = useState('');
   const [hostId, setHostId] = useState<string | null>(null);
   const [roomPlayers, setRoomPlayers] = useState<Player[]>([]);
+  const [setResult, setSetResult] = useState<{ setNumber: number; playerChips: Array<{ playerId: string; playerName: string; chips: number }> } | null>(null);
 
   useEffect(() => {
     const newSocket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
@@ -73,6 +74,11 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
     newSocket.on('error', (error: string) => {
       setMessage(error);
       setTimeout(() => setMessage(''), 3000);
+    });
+
+    newSocket.on('setResult', (result: { setNumber: number; playerChips: Array<{ playerId: string; playerName: string; chips: number }> }) => {
+      setSetResult(result);
+      console.log('Set result received:', result);
     });
 
     setSocket(newSocket);
@@ -151,10 +157,10 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
           {socket && isHost && (
             <button
               onClick={startGame}
-              disabled={roomPlayers.length < 2}
+              disabled={roomPlayers.length < 3}
               className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {roomPlayers.length < 2 ? '최소 2명이 필요합니다' : '게임 시작'}
+              {roomPlayers.length < 3 ? '최소 3명이 필요합니다' : '게임 시작'}
             </button>
           )}
 
@@ -195,6 +201,7 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
               <p className="text-sm opacity-80">방: {roomId}</p>
             </div>
             <div className="text-right">
+              <p>세트 {gameState.currentSet} - 게임 {gameState.gamesInSet}/4</p>
               <p>라운드: {gameState.round}</p>
               <p className="text-sm opacity-80">
                 현재 플레이어: {gameState.players[gameState.currentPlayerIndex]?.name}
@@ -235,6 +242,86 @@ export default function GameRoom({ roomId, playerName }: GameRoomProps) {
         {message && (
           <div className="mt-4 bg-yellow-500/20 border border-yellow-500 rounded-lg p-4 text-yellow-200">
             {message}
+          </div>
+        )}
+
+        {/* 게임 종료 시 다음 게임 시작 버튼 */}
+        {gameState.gamePhase === 'finished' && socket && hostId === currentPlayer.id && (
+          <div className="mt-4 bg-white/10 backdrop-blur-lg rounded-2xl p-6">
+            <h3 className="text-white text-xl font-bold mb-4">게임 종료</h3>
+            <div className="mb-4 space-y-2">
+              {gameState.players
+                .map(p => ({ ...p, tileCount: p.tiles.length }))
+                .sort((a, b) => a.tileCount - b.tileCount)
+                .map((player, index) => (
+                  <div key={player.id} className="flex justify-between text-white">
+                    <span>
+                      {index + 1}등: {player.name} ({player.tileCount}개)
+                    </span>
+                    <span className={player.chips >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {player.chips >= 0 ? '+' : ''}{player.chips}점
+                    </span>
+                  </div>
+                ))}
+            </div>
+            {gameState.gamesInSet < 4 ? (
+              <button
+                onClick={startGame}
+                className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+              >
+                다음 게임 시작 ({gameState.gamesInSet + 1}/4)
+              </button>
+            ) : (
+              <div className="text-white text-center">
+                <p className="mb-2">세트 {gameState.currentSet} 완료!</p>
+                <button
+                  onClick={startGame}
+                  className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+                >
+                  다음 세트 시작
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 세트 결과 모달 */}
+        {setResult && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 max-w-md w-full">
+              <h2 className="text-white text-2xl font-bold mb-4 text-center">
+                세트 {setResult.setNumber} 결과
+              </h2>
+              <div className="space-y-3 mb-6">
+                {setResult.playerChips
+                  .sort((a, b) => b.chips - a.chips)
+                  .map((player, index) => (
+                    <div
+                      key={player.playerId}
+                      className="flex justify-between items-center bg-white/10 rounded-lg p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-white font-bold text-lg">#{index + 1}</span>
+                        <span className="text-white">{player.playerName}</span>
+                      </div>
+                      <span
+                        className={`text-lg font-bold ${
+                          player.chips >= 0 ? 'text-green-400' : 'text-red-400'
+                        }`}
+                      >
+                        {player.chips >= 0 ? '+' : ''}
+                        {player.chips}점
+                      </span>
+                    </div>
+                  ))}
+              </div>
+              <button
+                onClick={() => setSetResult(null)}
+                className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+              >
+                확인
+              </button>
+            </div>
           </div>
         )}
       </div>

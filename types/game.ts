@@ -43,6 +43,8 @@ export interface GameState {
   deck: Tile[];
   gamePhase: 'waiting' | 'playing' | 'finished';
   round: number;
+  currentSet: number; // 현재 세트 번호 (1~4)
+  gamesInSet: number; // 현재 세트에서 진행된 게임 수
 }
 
 export interface Room {
@@ -52,5 +54,6 @@ export interface Room {
   players: Player[];
   maxPlayers: number;
   gameState: GameState | null;
+  setResults: Array<{ setNumber: number; playerChips: Array<{ playerId: string; playerName: string; chips: number }> }> | null; // 세트별 결과
 }
 

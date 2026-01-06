@@ -36,6 +36,7 @@ io.on('connection', (socket) => {
       players: [player],
       maxPlayers: 5,
       gameState: null,
+      setResults: null,
     };
 
     rooms.set(roomId, room);
@@ -162,8 +163,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (room.players.length < 2) {
-      socket.emit('error', '최소 2명이 필요합니다');
+    if (room.players.length < 3) {
+      socket.emit('error', '최소 3명이 필요합니다');
       return;
     }
 
@@ -240,7 +241,7 @@ io.on('connection', (socket) => {
     if (player.tiles.length === 0) {
       room.gameState.gamePhase = 'finished';
       // 점수 계산 및 칩 분배
-      calculateScores(room.gameState);
+      calculateScores(room.gameState, room);
     }
 
     io.to(room.id).emit('gameState', room.gameState);
@@ -346,67 +347,93 @@ function startGame(room: Room) {
   // 덱 셔플
   deck = shuffleDeck(deck);
   
+  // 세트 정보 초기화 (첫 게임이거나 새 세트 시작)
+  const isNewSet = !room.gameState || room.gameState.gamesInSet >= 4;
+  const currentSet = isNewSet ? (room.setResults ? room.setResults.length + 1 : 1) : room.gameState.currentSet;
+  const gamesInSet = isNewSet ? 1 : room.gameState.gamesInSet + 1;
+  
+  // 새 세트 시작 시 칩 초기화
+  const initialChips = isNewSet ? 0 : room.gameState.players.map(p => p.chips);
+  
   const gameState: GameState = {
     roomId: room.id,
-    players: room.players.map(p => ({ ...p, tiles: [], chips: 0 })),
+    players: room.players.map((p, idx) => ({ 
+      ...p, 
+      tiles: [], 
+      chips: isNewSet ? 0 : (initialChips[idx] || 0)
+    })),
     currentPlayerIndex: 0,
     lastPlayedCombination: null,
     lastPlayedPlayerId: null,
     deck: [],
     gamePhase: 'playing',
     round: 1,
+    currentSet,
+    gamesInSet,
   };
 
   // 플레이어 수에 따라 타일 분배
-  // 3인: 1~9까지 12개씩
-  // 4인: 1~13까지 13개씩
-  // 5인: 전체 타일 다 쓰고 각 12개씩
+  // 3인: 1~9까지 12개씩 (총 36개)
+  // 4인: 1~13까지 13개씩 (총 52개)
+  // 5인: 1~15까지 12개씩 (총 60개)
   const tilesPerPlayer = playerCount === 5 ? 12 : (playerCount === 3 ? 12 : 13);
   
   gameState.players.forEach(player => {
     player.tiles = deck.splice(0, tilesPerPlayer);
   });
 
+  // 파란색 3(cyan-3)을 가진 플레이어를 선으로 설정
+  let firstPlayerIndex = 0;
+  for (let i = 0; i < gameState.players.length; i++) {
+    const hasCyan3 = gameState.players[i].tiles.some(tile => tile.id === 'cyan-3');
+    if (hasCyan3) {
+      firstPlayerIndex = i;
+      break;
+    }
+  }
+  
+  // 플레이어 순서를 파란색 3을 가진 플레이어부터 시작하도록 재배열
+  if (firstPlayerIndex > 0) {
+    const reorderedPlayers = [
+      ...gameState.players.slice(firstPlayerIndex),
+      ...gameState.players.slice(0, firstPlayerIndex)
+    ];
+    gameState.players = reorderedPlayers;
+  }
+  
+  gameState.currentPlayerIndex = 0;
   gameState.deck = deck;
   room.gameState = gameState;
   io.to(room.id).emit('gameState', gameState);
 }
 
-function calculateScores(gameState: GameState) {
+function calculateScores(gameState: GameState, room: Room) {
   // 플레이어를 남은 타일 수로 정렬 (적은 순서대로)
   const playersWithTiles = gameState.players
     .map(player => {
-      // 숫자 2 타일이 남아있으면 *2배로 계산
       const remainingTiles = player.tiles.length;
-      const tile2Count = player.tiles.filter(t => t.number === 2).length;
-      const adjustedTileCount = remainingTiles + tile2Count; // 2가 있으면 추가로 카운트
-      
       return {
         player,
         tileCount: remainingTiles,
-        adjustedTileCount,
       };
     })
-    .sort((a, b) => a.adjustedTileCount - b.adjustedTileCount);
+    .sort((a, b) => a.tileCount - b.tileCount);
   
-  // 1등은 점수를 받기만 함 (변경 없음)
-  const firstPlace = playersWithTiles[0].player;
-  
-  // 2등부터는 위 플레이어들에게 점수를 줌
-  for (let i = 1; i < playersWithTiles.length; i++) {
+  // 새로운 점수 계산 방식: 나머지 사람들의 타일 수에 자신의 타일 수를 뺀 만큼의 점수를 각각 받는다
+  // 각 플레이어는 다른 모든 플레이어와 비교하여 (상대방 타일 수 - 자신의 타일 수)만큼 점수를 받음
+  for (let i = 0; i < playersWithTiles.length; i++) {
     const currentPlayer = playersWithTiles[i].player;
-    const currentAdjustedCount = playersWithTiles[i].adjustedTileCount;
+    const currentTileCount = playersWithTiles[i].tileCount;
     
-    // 자신보다 위에 있는 모든 플레이어에게 점수 줌
-    for (let j = 0; j < i; j++) {
-      const higherPlayer = playersWithTiles[j].player;
-      const higherAdjustedCount = playersWithTiles[j].adjustedTileCount;
-      
-      // 차이만큼 점수 줌
-      const scoreToGive = currentAdjustedCount - higherAdjustedCount;
-      if (scoreToGive > 0) {
-        currentPlayer.chips -= scoreToGive;
-        higherPlayer.chips += scoreToGive;
+    // 다른 모든 플레이어와 비교
+    for (let j = 0; j < playersWithTiles.length; j++) {
+      if (i !== j) {
+        const otherPlayer = playersWithTiles[j].player;
+        const otherTileCount = playersWithTiles[j].tileCount;
+        
+        // (상대방 타일 수 - 자신의 타일 수)만큼 점수
+        const scoreChange = otherTileCount - currentTileCount;
+        currentPlayer.chips += scoreChange;
       }
     }
   }
@@ -414,9 +441,37 @@ function calculateScores(gameState: GameState) {
   console.log('Score calculation:', playersWithTiles.map(p => ({
     name: p.player.name,
     tiles: p.tileCount,
-    adjusted: p.adjustedTileCount,
     chips: p.player.chips,
   })));
+  
+  // 4판이 끝났는지 확인
+  if (gameState.gamesInSet >= 4) {
+    // 세트 결과 저장
+    if (!room.setResults) {
+      room.setResults = [];
+    }
+    
+    room.setResults.push({
+      setNumber: gameState.currentSet,
+      playerChips: gameState.players.map(p => ({
+        playerId: p.id,
+        playerName: p.name,
+        chips: p.chips,
+      })),
+    });
+    
+    // 세트 결과 전송
+    io.to(room.id).emit('setResult', {
+      setNumber: gameState.currentSet,
+      playerChips: gameState.players.map(p => ({
+        playerId: p.id,
+        playerName: p.name,
+        chips: p.chips,
+      })),
+    });
+    
+    console.log('Set completed:', gameState.currentSet, room.setResults);
+  }
 }
 
 function updateRoomsList() {
