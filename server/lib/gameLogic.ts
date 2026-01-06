@@ -65,7 +65,7 @@ export function createDeck(): Tile[] {
 }
 
 // 덱 셔플
-function shuffleDeck(deck: Tile[]): Tile[] {
+export function shuffleDeck(deck: Tile[]): Tile[] {
   const shuffled = [...deck];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -146,13 +146,27 @@ export function identifyCombination(tiles: Tile[]): Combination | null {
       const isStraight = checkStraightBase(baseValues);
       
       if (isStraight) {
-        // 스트레이트 플러시 (가장 높은 숫자의 value 사용)
-        const maxTile = tiles.reduce((max, tile) => tile.value > max.value ? tile : max);
-        return {
-          type: 'straightflush',
-          tiles,
-          value: maxTile.value,
-        };
+        // 스트레이트 플러시
+        // 5개 조합에서는 1이 가장 높은 숫자
+        const hasOne = tiles.some(t => t.number === 1);
+        if (hasOne) {
+          // 1이 포함된 스트레이트 플러시는 가장 높음
+          const oneTiles = tiles.filter(t => t.number === 1);
+          const maxOneValue = Math.max(...oneTiles.map(t => t.value));
+          return {
+            type: 'straightflush',
+            tiles,
+            value: maxOneValue + 2000, // 스트레이트 플러시는 스트레이트보다 더 높음
+          };
+        } else {
+          // 1이 없으면 일반적인 비교
+          const maxTile = tiles.reduce((max, tile) => tile.value > max.value ? tile : max);
+          return {
+            type: 'straightflush',
+            tiles,
+            value: maxTile.value,
+          };
+        }
       } else {
         // 플러시 (가장 높은 숫자의 value 사용)
         const maxTile = tiles.reduce((max, tile) => tile.value > max.value ? tile : max);
@@ -169,15 +183,30 @@ export function identifyCombination(tiles: Tile[]): Combination | null {
   if (tiles.length === 5) {
     const baseValues = tiles.map(t => getNumberBaseValue(t.number)).sort((a, b) => a - b);
     if (checkStraightBase(baseValues)) {
-      // 가장 높은 숫자의 가장 강한 색상 value 사용
-      const maxBaseValue = Math.max(...baseValues);
-      const maxTiles = tiles.filter(t => getNumberBaseValue(t.number) === maxBaseValue);
-      const maxValue = Math.max(...maxTiles.map(t => t.value));
-      return {
-        type: 'straight',
-        tiles,
-        value: maxValue,
-      };
+      // 5개 조합에서는 1이 가장 높은 숫자
+      // 1이 포함되어 있으면 특별한 value 계산
+      const hasOne = tiles.some(t => t.number === 1);
+      if (hasOne) {
+        // 1이 포함된 스트레이트는 가장 높음 (1의 value를 사용하되, 더 높은 값으로 조정)
+        const oneTiles = tiles.filter(t => t.number === 1);
+        const maxOneValue = Math.max(...oneTiles.map(t => t.value));
+        // 1이 포함된 스트레이트는 2보다 높게 설정 (2의 최대 value는 154이므로 155 이상으로)
+        return {
+          type: 'straight',
+          tiles,
+          value: maxOneValue + 1000, // 1이 포함된 스트레이트는 가장 높음
+        };
+      } else {
+        // 1이 없으면 일반적인 비교 (가장 높은 숫자의 가장 강한 색상 value 사용)
+        const maxBaseValue = Math.max(...baseValues);
+        const maxTiles = tiles.filter(t => getNumberBaseValue(t.number) === maxBaseValue);
+        const maxValue = Math.max(...maxTiles.map(t => t.value));
+        return {
+          type: 'straight',
+          tiles,
+          value: maxValue,
+        };
+      }
     }
   }
 

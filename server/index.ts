@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import { createServer } from 'http';
 import { GameState, Player, Tile, Combination, Room } from './types/game';
-import { createDeck, identifyCombination, compareCombinations } from './lib/gameLogic';
+import { createDeck, identifyCombination, compareCombinations, shuffleDeck } from './lib/gameLogic';
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -330,7 +330,22 @@ io.on('connection', (socket) => {
 });
 
 function startGame(room: Room) {
-  const deck = createDeck();
+  const playerCount = room.players.length;
+  let deck = createDeck();
+  
+  // 인원별로 사용할 타일 범위 필터링
+  if (playerCount === 3) {
+    // 3인: 1~9만 사용
+    deck = deck.filter(tile => tile.number >= 1 && tile.number <= 9);
+  } else if (playerCount === 4) {
+    // 4인: 1~13만 사용
+    deck = deck.filter(tile => tile.number >= 1 && tile.number <= 13);
+  }
+  // 5인: 전체 타일 사용 (필터링 없음)
+  
+  // 덱 셔플
+  deck = shuffleDeck(deck);
+  
   const gameState: GameState = {
     roomId: room.id,
     players: room.players.map(p => ({ ...p, tiles: [], chips: 0 })),
@@ -343,8 +358,10 @@ function startGame(room: Room) {
   };
 
   // 플레이어 수에 따라 타일 분배
-  // 5명일 때: 12장씩, 4명 이하일 때: 13장씩
-  const tilesPerPlayer = gameState.players.length === 5 ? 12 : 13;
+  // 3인: 1~9까지 12개씩
+  // 4인: 1~13까지 13개씩
+  // 5인: 전체 타일 다 쓰고 각 12개씩
+  const tilesPerPlayer = playerCount === 5 ? 12 : (playerCount === 3 ? 12 : 13);
   
   gameState.players.forEach(player => {
     player.tiles = deck.splice(0, tilesPerPlayer);
@@ -356,11 +373,50 @@ function startGame(room: Room) {
 }
 
 function calculateScores(gameState: GameState) {
-  // 간단한 점수 계산 (나중에 더 복잡한 규칙 추가 가능)
-  const winner = gameState.players.find(p => p.tiles.length === 0);
-  if (winner) {
-    winner.chips += 10;
+  // 플레이어를 남은 타일 수로 정렬 (적은 순서대로)
+  const playersWithTiles = gameState.players
+    .map(player => {
+      // 숫자 2 타일이 남아있으면 *2배로 계산
+      const remainingTiles = player.tiles.length;
+      const tile2Count = player.tiles.filter(t => t.number === 2).length;
+      const adjustedTileCount = remainingTiles + tile2Count; // 2가 있으면 추가로 카운트
+      
+      return {
+        player,
+        tileCount: remainingTiles,
+        adjustedTileCount,
+      };
+    })
+    .sort((a, b) => a.adjustedTileCount - b.adjustedTileCount);
+  
+  // 1등은 점수를 받기만 함 (변경 없음)
+  const firstPlace = playersWithTiles[0].player;
+  
+  // 2등부터는 위 플레이어들에게 점수를 줌
+  for (let i = 1; i < playersWithTiles.length; i++) {
+    const currentPlayer = playersWithTiles[i].player;
+    const currentAdjustedCount = playersWithTiles[i].adjustedTileCount;
+    
+    // 자신보다 위에 있는 모든 플레이어에게 점수 줌
+    for (let j = 0; j < i; j++) {
+      const higherPlayer = playersWithTiles[j].player;
+      const higherAdjustedCount = playersWithTiles[j].adjustedTileCount;
+      
+      // 차이만큼 점수 줌
+      const scoreToGive = currentAdjustedCount - higherAdjustedCount;
+      if (scoreToGive > 0) {
+        currentPlayer.chips -= scoreToGive;
+        higherPlayer.chips += scoreToGive;
+      }
+    }
   }
+  
+  console.log('Score calculation:', playersWithTiles.map(p => ({
+    name: p.player.name,
+    tiles: p.tileCount,
+    adjusted: p.adjustedTileCount,
+    chips: p.player.chips,
+  })));
 }
 
 function updateRoomsList() {
